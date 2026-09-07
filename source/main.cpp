@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <gccore.h>
+#include <wiiuse/wpad.h> // This is the missing header for Wiimote controls
 
 // Extern declaration for the raw image data created by raw2c
 extern "C" {
