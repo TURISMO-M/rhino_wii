@@ -1,36 +1,61 @@
-# Define source folder and build parameters
+ifneq ($(BUILD),build)
+
+export TOPDIR	:=	$(CURDIR)
+export LIBOGC_BASE	:=	$(DEVKITPRO)/libogc
+export LIBOGC_INC	:=	$(LIBOGC_BASE)/include
+export LIBOGC_LIB	:=	$(LIBOGC_BASE)/lib/wii
+
+export PATH	:=	$(DEVKITPPC)/bin:$(DEVKITPRO)/tools/bin:$(PATH)
+
+export CC	:=	powerpc-eabi-gcc
+export CXX	:=	powerpc-eabi-g++
+export AR	:=	powerpc-eabi-ar
+export LD	:=	powerpc-eabi-g++
+export ELF2DOL	:=	elf2dol
+
+export CFLAGS	:=	-g -O2 -Wall -mrvl -mcpu=750 -meabi -mhard-float -DGEKKO -I$(LIBOGC_INC)
+export CXXFLAGS	:=	$(CFLAGS)
+export LDFLAGS	:=	-g -mrvl -mcpu=750 -meabi -mhard-float -L$(LIBOGC_LIB) -lwiiuse -lbte -logc -lm
+
 SOURCES		:=	source
-LIBS		:=	-lwiiuse -lbte -logc -lm
+BUILD		:=	build
+TARGET		:=	boot
 
-ifneq ($(BUILD),$(notdir $(CURDIR)))
-export OUTPUT	:=	$(CURDIR)/boot
-export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
-export DEPSDIR	:=	$(CURDIR)/$(BUILD)
+CPPFILES	:=	$(foreach dir,$(SOURCES),$(wildcard $(dir)/*.cpp))
+CFILES		:=	$(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))
+OFILES		:=	$(addprefix $(BUILD)/,$(notdir $(CPPFILES:.cpp=.o) $(CFILES:.c=.o)))
 
-CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
-CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+.PHONY: clean all
 
-export OFILES	:=	$(CPPFILES:.cpp=.o) $(CFILES:.c=.o)
-
-.PHONY: $(BUILD) clean
+all: $(BUILD)
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile BUILD=$(BUILD)
 
 $(BUILD):
-	@[ -d $@ ] || mkdir -p $@
-	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+	@mkdir -p $@
 
 clean:
-	@echo clean ...
-	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).dol
+	@rm -rf $(BUILD) $(TARGET).elf $(TARGET).dol
 
 else
 
-DEPENDS	:=	$(OFILES:.o=.d)
+VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 
-BUILD_LIBS	:=	$(LIBS)
+all: $(TOPDIR)/$(TARGET).dol
 
-$(OUTPUT).dol: $(OUTPUT).elf
-$(OUTPUT).elf: $(OFILES)
+$(TOPDIR)/$(TARGET).dol: $(TOPDIR)/$(TARGET).elf
+	@echo "Creating DOL: $@"
+	@$(ELF2DOL) $< $@
 
--include $(DEPENDS)
+$(TOPDIR)/$(TARGET).elf: $(OFILES)
+	@echo "Linking ELF: $@"
+	@$(LD) $^ $(LDFLAGS) -o $@
+
+%.o: %.cpp
+	@echo "Compiling C++: $<"
+	@$(CXX) $(CXXFLAGS) -c $< -o $@
+
+%.o: %.c
+	@echo "Compiling C: $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
 
 endif
