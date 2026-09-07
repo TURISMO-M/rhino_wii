@@ -21,8 +21,9 @@ int main(int argc, char **argv) {
     VIDEO_WaitVSync();
     if(rmode->viTVMode & VI_NON_INTERLACE) VIDEO_WaitVSync();
 
-    printf("\x1b[20;0H");
-    printf("Hello Creeper Wii!");
+    // Center screen output text
+    printf("\x1b[12;28H");
+    printf("Hello Wii!");
 
     while(1) {
         PAD_ScanPads();
