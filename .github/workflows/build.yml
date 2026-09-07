@@ -22,14 +22,14 @@ jobs:
 
       - name: Compile Wii App
         run: |
-          # Install dependencies for GRRLIB
-          dkp-pacman -S --noconfirm ppc-freetype ppc-libpng ppc-libjpeg-turbo ppc-zlib
+          # Install dependencies and pkg-config for GRRLIB
+          dkp-pacman -S --noconfirm ppc-freetype ppc-libpng ppc-libjpeg-turbo ppc-zlib ppc-pkg-config
           
           export DEVKITPRO=/opt/devkitpro
           export DEVKITPPC=$DEVKITPRO/devkitPPC
           export PATH=$DEVKITPPC/bin:$DEVKITPRO/tools/bin:$PATH
           
-          # Clone, build, and install GRRLIB properly from source
+          # Clone, build, and install GRRLIB from source
           git clone --depth 1 https://github.com/GRRLIB/GRRLIB.git /tmp/grrlib
           make -C /tmp/grrlib/GRRLIB
           make -C /tmp/grrlib/GRRLIB install
@@ -51,4 +51,3 @@ jobs:
             boot.elf
             build/*.dol
             build/*.elf
-
