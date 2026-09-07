@@ -22,6 +22,7 @@ jobs:
 
       - name: Compile Wii App
         run: |
+          dkp-pacman -S --noconfirm wii-grrlib
           export DEVKITPRO=/opt/devkitpro
           export DEVKITPPC=$DEVKITPRO/devkitPPC
           export PATH=$DEVKITPPC/bin:$DEVKITPRO/tools/bin:$PATH
