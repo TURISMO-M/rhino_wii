@@ -62,6 +62,6 @@ $(TOPDIR)/$(TARGET).elf: $(OFILES)
 	@echo "Converting PNG: $<"
 	@$(RAW2C) $<
 	@$(CC) $(CFLAGS) -c $(notdir $<).c -o $@
+	@rm -f $(notdir $<).c
 
 endif
-
