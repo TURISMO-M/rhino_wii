@@ -12,6 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     container: devkitpro/devkitppc:latest
 
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -21,15 +25,18 @@ jobs:
           export DEVKITPRO=/opt/devkitpro
           export DEVKITPPC=$DEVKITPRO/devkitPPC
           export PATH=$DEVKITPPC/bin:$DEVKITPRO/tools/bin:$PATH
-          make
+          make BUILD=build
+
+      - name: Debug Output Files
+        run: |
+          ls -la
+          ls -la build || true
 
       - name: Upload Compiled Binary
         uses: actions/upload-artifact@v4
         with:
           name: wii-boot-file
           path: |
-            *.dol
-            *.elf
             boot.dol
             boot.elf
             build/*.dol
