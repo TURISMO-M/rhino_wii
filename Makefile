@@ -38,7 +38,7 @@ $(BUILD):
 	@mkdir -p $@
 
 clean:
-	@rm -rf $(BUILD) $(TARGET).elf $(TARGET).dol assets/*.c assets/*.h
+	@rm -rf $(BUILD) $(TARGET).elf $(TARGET).dol
 
 else
 
@@ -60,8 +60,8 @@ $(TOPDIR)/$(TARGET).elf: $(OFILES)
 
 %.o: %.png
 	@echo "Converting PNG: $<"
-	@cd $(dir $<) && $(RAW2C) $(notdir $<)
-	@$(CC) $(CFLAGS) -I$(dir $<) -c $(dir $<)$(notdir $<).c -o $@
-	@rm -f $(dir $<)$(notdir $<).c
+	@cp $< $(notdir $<)
+	@$(RAW2C) $(notdir $<)
+	@$(CC) $(CFLAGS) -I. -c $(basename $(notdir $<)).c -o $@
 
 endif
