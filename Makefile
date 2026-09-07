@@ -1,6 +1,11 @@
-ifneq ($(BUILD),build)
+TARGET		:=	boot
+SOURCES		:=	source
+BUILD		:=	build
+
+ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export TOPDIR	:=	$(CURDIR)
+export TARGET	:=	$(TARGET)
 export LIBOGC_BASE	:=	$(DEVKITPRO)/libogc
 export LIBOGC_INC	:=	$(LIBOGC_BASE)/include
 export LIBOGC_LIB	:=	$(LIBOGC_BASE)/lib/wii
@@ -17,18 +22,14 @@ export CFLAGS	:=	-g -O2 -Wall -mrvl -mcpu=750 -meabi -mhard-float -DGEKKO -I$(LI
 export CXXFLAGS	:=	$(CFLAGS)
 export LDFLAGS	:=	-g -mrvl -mcpu=750 -meabi -mhard-float -L$(LIBOGC_LIB) -lwiiuse -lbte -logc -lm
 
-SOURCES		:=	source
-BUILD		:=	build
-TARGET		:=	boot
-
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(wildcard $(dir)/*.cpp))
 CFILES		:=	$(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))
-OFILES		:=	$(addprefix $(BUILD)/,$(notdir $(CPPFILES:.cpp=.o) $(CFILES:.c=.o)))
+export OFILES	:=	$(notdir $(CPPFILES:.cpp=.o) $(CFILES:.c=.o))
 
 .PHONY: clean all
 
 all: $(BUILD)
-	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile BUILD=$(BUILD)
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 $(BUILD):
 	@mkdir -p $@
@@ -38,7 +39,7 @@ clean:
 
 else
 
-VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
+VPATH	:=	$(foreach dir,$(SOURCES),$(TOPDIR)/$(dir))
 
 all: $(TOPDIR)/$(TARGET).dol
 
@@ -59,3 +60,4 @@ $(TOPDIR)/$(TARGET).elf: $(OFILES)
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 endif
+
