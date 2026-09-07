@@ -2,9 +2,9 @@ name: Build Wii Game
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   workflow_dispatch:
 
 jobs:
@@ -20,27 +20,76 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Compile Wii App
+      - name: Install Dependencies
         run: |
-          # Install dependencies and pkg-config for GRRLIB
-          dkp-pacman -S --noconfirm ppc-freetype ppc-libpng ppc-libjpeg-turbo ppc-zlib ppc-pkg-config
-          
+          dkp-pacman -Syu --noconfirm
+          dkp-pacman -S --noconfirm \
+            ppc-freetype \
+            ppc-libpng \
+            ppc-libjpeg-turbo \
+            ppc-zlib \
+            ppc-pkg-config
+
+      - name: Configure devkitPro
+        run: |
           export DEVKITPRO=/opt/devkitpro
           export DEVKITPPC=$DEVKITPRO/devkitPPC
           export PATH=$DEVKITPPC/bin:$DEVKITPRO/tools/bin:$PATH
-          
-          # Clone, build, and install GRRLIB from source
-          git clone --depth 1 https://github.com/GRRLIB/GRRLIB.git /tmp/grrlib
+
+          echo "DEVKITPRO=$DEVKITPRO" >> "$GITHUB_ENV"
+          echo "DEVKITPPC=$DEVKITPPC" >> "$GITHUB_ENV"
+          echo "$DEVKITPPC/bin" >> "$GITHUB_PATH"
+          echo "$DEVKITPRO/tools/bin" >> "$GITHUB_PATH"
+
+      - name: Build GRRLIB
+        run: |
+          rm -rf /tmp/grrlib
+
+          git clone --depth 1 \
+            https://github.com/GRRLIB/GRRLIB.git \
+            /tmp/grrlib
+
+          echo "Building GRRLIB..."
           make -C /tmp/grrlib/GRRLIB
-          make -C /tmp/grrlib/GRRLIB install
-          
-          # Build your game
+
+          echo "Checking GRRLIB libraries..."
+          find /tmp/grrlib/GRRLIB -name "*.a" -print
+
+      - name: Verify GRRLIB pngu Library
+        run: |
+          if [ ! -f /tmp/grrlib/GRRLIB/lib/pngu/libpngu.a ]; then
+            echo "ERROR: libpngu.a was not built."
+            exit 1
+          fi
+
+          if [ ! -f /tmp/grrlib/GRRLIB/GRRLIB/libgrrlib.a ]; then
+            echo "ERROR: libgrrlib.a was not built."
+            exit 1
+          fi
+
+          echo "GRRLIB libraries found:"
+          ls -lh /tmp/grrlib/GRRLIB/lib/pngu/libpngu.a
+          ls -lh /tmp/grrlib/GRRLIB/GRRLIB/libgrrlib.a
+
+      - name: Build Wii Game
+        run: |
           make BUILD=build
 
       - name: Debug Output Files
+        if: always()
         run: |
+          echo "Root directory:"
           ls -la
+
+          echo ""
+          echo "Build directory:"
           ls -la build || true
+
+          echo ""
+          echo "ELF/DOL files:"
+          find . -maxdepth 3 \
+            \( -name "*.elf" -o -name "*.dol" \) \
+            -type f -print
 
       - name: Upload Compiled Binary
         uses: actions/upload-artifact@v4
@@ -51,3 +100,4 @@ jobs:
             boot.elf
             build/*.dol
             build/*.elf
+          if-no-files-found: error
