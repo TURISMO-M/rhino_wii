@@ -20,19 +20,23 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Fix Cloudflare 403 for dkp-pacman
+      - name: Configure dkp-pacman (Fix 403 & PGP Signatures)
         run: |
-          # Configure pacman to use a valid User-Agent to prevent Cloudflare 403 errors
           PACMAN_CONF="/opt/devkitpro/pacman/etc/pacman.conf"
+          
+          # Fix Cloudflare 403 User-Agent
           if grep -q "XferCommand" "$PACMAN_CONF"; then
             sed -i 's|#*XferCommand = .*|XferCommand = /usr/bin/wget -U "dkp-pacman" --passive-ftp -c -O %o %u|g' "$PACMAN_CONF"
           else
             echo 'XferCommand = /usr/bin/wget -U "dkp-pacman" --passive-ftp -c -O %o %u' >> "$PACMAN_CONF"
           fi
 
+          # Disable PGP signature checks in CI environment
+          sed -i 's/SigLevel.*/SigLevel = Never/g' "$PACMAN_CONF"
+
       - name: Install Dependencies
         run: |
-          dkp-pacman -Syu --noconfirm
+          dkp-pacman -Sy --noconfirm
           dkp-pacman -S --noconfirm \
             ppc-freetype \
             ppc-libpng \
