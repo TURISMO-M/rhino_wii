@@ -1,6 +1,7 @@
 TARGET		:=	boot
 SOURCES		:=	source
 BUILD		:=	build
+GRAPHICS	:=	assets
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
@@ -14,9 +15,9 @@ export PATH	:=	$(DEVKITPPC)/bin:$(DEVKITPRO)/tools/bin:$(PATH)
 
 export CC	:=	powerpc-eabi-gcc
 export CXX	:=	powerpc-eabi-g++
-export AR	:=	powerpc-eabi-ar
 export LD	:=	powerpc-eabi-g++
 export ELF2DOL	:=	elf2dol
+export RAW2C	:=	raw2c
 
 export CFLAGS	:=	-g -O2 -Wall -mrvl -mcpu=750 -meabi -mhard-float -DGEKKO -I$(LIBOGC_INC)
 export CXXFLAGS	:=	$(CFLAGS)
@@ -24,7 +25,9 @@ export LDFLAGS	:=	-g -mrvl -mcpu=750 -meabi -mhard-float -L$(LIBOGC_LIB) -lwiius
 
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(wildcard $(dir)/*.cpp))
 CFILES		:=	$(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))
-export OFILES	:=	$(notdir $(CPPFILES:.cpp=.o) $(CFILES:.c=.o))
+PNGFILES	:=	$(foreach dir,$(GRAPHICS),$(wildcard $(dir)/*.png))
+
+export OFILES	:=	$(notdir $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(PNGFILES:.png=.o))
 
 .PHONY: clean all
 
@@ -39,7 +42,7 @@ clean:
 
 else
 
-VPATH	:=	$(foreach dir,$(SOURCES),$(TOPDIR)/$(dir))
+VPATH	:=	$(foreach dir,$(SOURCES),$(TOPDIR)/$(dir)) $(foreach dir,$(GRAPHICS),$(TOPDIR)/$(dir))
 
 all: $(TOPDIR)/$(TARGET).dol
 
@@ -55,9 +58,10 @@ $(TOPDIR)/$(TARGET).elf: $(OFILES)
 	@echo "Compiling C++: $<"
 	@$(CXX) $(CXXFLAGS) -c $< -o $@
 
-%.o: %.c
-	@echo "Compiling C: $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
+%.o: %.png
+	@echo "Converting PNG: $<"
+	@$(RAW2C) $<
+	@$(CC) $(CFLAGS) -c $(notdir $<).c -o $@
 
 endif
 
