@@ -19,9 +19,9 @@ export LD	:=	powerpc-eabi-g++
 export ELF2DOL	:=	elf2dol
 export RAW2C	:=	raw2c
 
-export CFLAGS	:=	-g -O2 -Wall -mrvl -mcpu=750 -meabi -mhard-float -DGEKKO -I$(LIBOGC_INC)
+export CFLAGS	:=	-g -O2 -Wall -mrvl -mcpu=750 -meabi -mhard-float -DGEKKO -I$(LIBOGC_INC) -I$(DEVKITPRO)/portlibs/wii/include
 export CXXFLAGS	:=	$(CFLAGS)
-export LDFLAGS	:=	-g -mrvl -mcpu=750 -meabi -mhard-float -L$(LIBOGC_LIB) -lwiiuse -lbte -logc -lm
+export LDFLAGS	:=	-g -mrvl -mcpu=750 -meabi -mhard-float -L$(LIBOGC_LIB) -L$(DEVKITPRO)/portlibs/wii/lib -lgrrlib -lfreetype -lpng -ljpeg -lz -lwiiuse -lbte -logc -lm
 
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(wildcard $(dir)/*.cpp))
 CFILES		:=	$(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))
