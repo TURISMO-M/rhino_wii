@@ -20,30 +20,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Configure dkp-pacman (Fix 403 & PGP Signatures)
-        run: |
-          PACMAN_CONF="/opt/devkitpro/pacman/etc/pacman.conf"
-          
-          # Fix Cloudflare 403 User-Agent
-          if grep -q "XferCommand" "$PACMAN_CONF"; then
-            sed -i 's|#*XferCommand = .*|XferCommand = /usr/bin/wget -U "dkp-pacman" --passive-ftp -c -O %o %u|g' "$PACMAN_CONF"
-          else
-            echo 'XferCommand = /usr/bin/wget -U "dkp-pacman" --passive-ftp -c -O %o %u' >> "$PACMAN_CONF"
-          fi
-
-          # Disable PGP signature checks in CI environment
-          sed -i 's/SigLevel.*/SigLevel = Never/g' "$PACMAN_CONF"
-
-      - name: Install Dependencies
-        run: |
-          dkp-pacman -Sy --noconfirm
-          dkp-pacman -S --noconfirm \
-            ppc-freetype \
-            ppc-libpng \
-            ppc-libjpeg-turbo \
-            ppc-zlib \
-            ppc-pkg-config
-
       - name: Configure devkitPro
         run: |
           export DEVKITPRO=/opt/devkitpro
@@ -55,36 +31,6 @@ jobs:
           echo "$DEVKITPPC/bin" >> "$GITHUB_PATH"
           echo "$DEVKITPRO/tools/bin" >> "$GITHUB_PATH"
 
-      - name: Build GRRLIB
-        run: |
-          rm -rf /tmp/grrlib
-
-          git clone --depth 1 \
-            https://github.com/GRRLIB/GRRLIB.git \
-            /tmp/grrlib
-
-          echo "Building GRRLIB..."
-          make -C /tmp/grrlib/GRRLIB
-
-          echo "Checking GRRLIB libraries..."
-          find /tmp/grrlib/GRRLIB -name "*.a" -print
-
-      - name: Verify GRRLIB pngu Library
-        run: |
-          if [ ! -f /tmp/grrlib/GRRLIB/lib/pngu/libpngu.a ]; then
-            echo "ERROR: libpngu.a was not built."
-            exit 1
-          fi
-
-          if [ ! -f /tmp/grrlib/GRRLIB/GRRLIB/libgrrlib.a ]; then
-            echo "ERROR: libgrrlib.a was not built."
-            exit 1
-          fi
-
-          echo "GRRLIB libraries found:"
-          ls -lh /tmp/grrlib/GRRLIB/lib/pngu/libpngu.a
-          ls -lh /tmp/grrlib/GRRLIB/GRRLIB/libgrrlib.a
-
       - name: Build Wii Game
         run: |
           make BUILD=build
@@ -92,18 +38,8 @@ jobs:
       - name: Debug Output Files
         if: always()
         run: |
-          echo "Root directory:"
           ls -la
-
-          echo ""
-          echo "Build directory:"
           ls -la build || true
-
-          echo ""
-          echo "ELF/DOL files:"
-          find . -maxdepth 3 \
-            \( -name "*.elf" -o -name "*.dol" \) \
-            -type f -print
 
       - name: Upload Compiled Binary
         uses: actions/upload-artifact@v4
