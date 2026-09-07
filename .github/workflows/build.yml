@@ -21,7 +21,7 @@ jobs:
           export DEVKITPRO=/opt/devkitpro
           export DEVKITPPC=$DEVKITPRO/devkitPPC
           export PATH=$DEVKITPPC/bin:$DEVKITPRO/tools/bin:$PATH
-          make -f $DEVKITPRO/wii-examples/template/Makefile
+          make
 
       - name: Upload Compiled Binary
         uses: actions/upload-artifact@v4
@@ -30,5 +30,7 @@ jobs:
           path: |
             *.dol
             *.elf
-            **/*.dol
-            **/*.elf
+            boot.dol
+            boot.elf
+            build/*.dol
+            build/*.elf
