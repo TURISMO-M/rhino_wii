@@ -1,224 +1,226 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
+#include <string.h>
+#include <math.h>
 #include <gccore.h>
 #include <wiiuse/wpad.h>
 
-static void *xfb = NULL;
+#define FIFO_SIZE (256 * 1024)
+
+static void *frameBuffer[2] = { NULL, NULL };
 static GXRModeObj *rmode = NULL;
+static void *gp_fifo = NULL;
 
-#define TILE_SIZE 20
-#define GRID_WIDTH 32  
-#define GRID_HEIGHT 24 
-#define MAX_SNAKE_LENGTH (GRID_WIDTH * GRID_HEIGHT)
+// Player Car Transform Data
+float carX = 0.0f;
+float carZ = 0.0f;
+float carAngle = 0.0f;
+float carSpeed = 0.0f;
 
-#define COLOR_BLACK 0x00800080
-#define COLOR_GREEN 0xD000D000
-#define COLOR_RED   0x50505050
-#define COLOR_WHITE 0xFF80FF80
-#define COLOR_GRAY  0x80808080
-
-struct Point {
-    int x;
-    int y;
-};
-
-struct Point snake[MAX_SNAKE_LENGTH];
-int snakeLength = 1;
-struct Point food;
-int dx = 1, dy = 0;
-int score = 0;
-int highScore = 0;
+// Game State & Menu
 bool isPaused = false;
-bool gameOver = false;
-int pauseSelection = 0; // 0 = Resume, 1 = Restart
+int pauseSelection = 0; // 0 = Resume, 1 = Reset Position
 
-void drawRect(int x, int y, int width, int height, u32 color) {
-    if (!xfb || !rmode) return;
-    u32 *fb = (u32 *)xfb;
-    int screenWidth = rmode->fbWidth / 2;
-
-    for (int r = y; r < y + height; r++) {
-        if (r < 0 || r >= rmode->efbHeight) continue;
-        for (int c = x / 2; c < (x + width) / 2; c++) {
-            if (c < 0 || c >= screenWidth) continue;
-            fb[r * screenWidth + c] = color;
-        }
-    }
-}
-
-void clearScreen(u32 color) {
-    if (!xfb || !rmode) return;
-    u32 *fb = (u32 *)xfb;
-    int totalWords = (rmode->fbWidth * rmode->efbHeight) / 2;
-    for (int i = 0; i < totalWords; i++) {
-        fb[i] = color;
-    }
-}
-
-void spawnFood() {
-    food.x = rand() % GRID_WIDTH;
-    food.y = rand() % GRID_HEIGHT;
-}
-
-void resetGame() {
-    snakeLength = 1;
-    snake[0].x = 10;
-    snake[0].y = 10;
-    dx = 1;
-    dy = 0;
-    score = 0;
-    gameOver = false;
+// Reset Car Position
+void resetCar() {
+    carX = 0.0f;
+    carZ = 0.0f;
+    carAngle = 0.0f;
+    carSpeed = 0.0f;
     isPaused = false;
     pauseSelection = 0;
-    spawnFood();
 }
 
-void updateSnake() {
-    if (isPaused || gameOver) return;
+// Draw a colored 3D Cube (used for the Car model)
+void drawCube(float x, float y, float z, float sx, float sy, float sz, u8 r, u8 g, u8 b) {
+    Mtx model, rot, trans;
+    guMtxIdentity(model);
+    guMtxRotAxisDeg(rot, &(guVector){0.0f, 1.0f, 0.0f}, carAngle);
+    guMtxTrans(trans, x, y, z);
+    guMtxConcat(trans, rot, model);
 
-    int nextX = snake[0].x + dx;
-    int nextY = snake[0].y + dy;
+    Mtx modelView;
+    guMtxConcat(model, modelView, modelView); // Applied to current view matrix
+    GX_LoadPosMtxImm(model, GX_PNMTX0);
 
-    if (nextX < 0) nextX = GRID_WIDTH - 1;
-    if (nextX >= GRID_WIDTH) nextX = 0;
-    if (nextY < 0) nextY = GRID_HEIGHT - 1;
-    if (nextY >= GRID_HEIGHT) nextY = 0;
+    GX_Begin(GX_QUADS, GX_VTXFMT0, 24);
 
-    for (int i = 1; i < snakeLength; i++) {
-        if (snake[i].x == nextX && snake[i].y == nextY) {
-            gameOver = true;
-            if (score > highScore) highScore = score;
-            return;
-        }
-    }
+    // Front Face
+    GX_Position3f32(-sx, -sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx, -sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx,  sy,  sz); GX_Color3u8(r, g, b);
 
-    for (int i = snakeLength - 1; i > 0; i--) {
-        snake[i] = snake[i - 1];
-    }
-    snake[0].x = nextX;
-    snake[0].y = nextY;
+    // Back Face
+    GX_Position3f32(-sx, -sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx,  sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx, -sy, -sz); GX_Color3u8(r, g, b);
 
-    if (snake[0].x == food.x && snake[0].y == food.y) {
-        score += 10;
-        if (snakeLength < MAX_SNAKE_LENGTH) snakeLength++;
-        spawnFood();
-    }
+    // Top Face
+    GX_Position3f32(-sx,  sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx,  sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy, -sz); GX_Color3u8(r, g, b);
+
+    // Bottom Face
+    GX_Position3f32(-sx, -sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx, -sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx, -sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx, -sy,  sz); GX_Color3u8(r, g, b);
+
+    // Right Face
+    GX_Position3f32( sx, -sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx, -sy,  sz); GX_Color3u8(r, g, b);
+
+    // Left Face
+    GX_Position3f32(-sx, -sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx, -sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx,  sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx,  sy, -sz); GX_Color3u8(r, g, b);
+
+    GX_End();
 }
 
-// Visual Pause Menu Overlay
-void drawPauseMenu() {
-    int menuWidth = 240;
-    int menuHeight = 140;
-    int startX = (640 - menuWidth) / 2;
-    int startY = (480 - menuHeight) / 2;
+// Draw 3D Ground Plane Grid
+void drawTrackPlane() {
+    Mtx model;
+    guMtxIdentity(model);
+    GX_LoadPosMtxImm(model, GX_PNMTX0);
 
-    // Draw Menu Background Frame
-    drawRect(startX, startY, menuWidth, menuHeight, COLOR_WHITE);
-    drawRect(startX + 4, startY + 4, menuWidth - 8, menuHeight - 8, COLOR_BLACK);
-
-    // Draw Selection Buttons
-    if (pauseSelection == 0) {
-        drawRect(startX + 20, startY + 30, menuWidth - 40, 30, COLOR_GREEN); // Highlight Resume
-        drawRect(startX + 20, startY + 80, menuWidth - 40, 30, COLOR_GRAY);
-    } else {
-        drawRect(startX + 20, startY + 30, menuWidth - 40, 30, COLOR_GRAY);
-        drawRect(startX + 20, startY + 80, menuWidth - 40, 30, COLOR_RED);   // Highlight Restart
-    }
+    GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
+        GX_Position3f32(-200.0f, -0.1f, -200.0f); GX_Color3u8(40, 140, 40);
+        GX_Position3f32( 200.0f, -0.1f, -200.0f); GX_Color3u8(40, 140, 40);
+        GX_Position3f32( 200.0f, -0.1f,  200.0f); GX_Color3u8(40, 140, 40);
+        GX_Position3f32(-200.0f, -0.1f,  200.0f); GX_Color3u8(40, 140, 40);
+    GX_End();
 }
 
 int main(int argc, char **argv) {
     VIDEO_Init();
     WPAD_Init();
-    PAD_Init();
-    srand(time(NULL));
 
     rmode = VIDEO_GetPreferredMode(NULL);
-    xfb = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
+    frameBuffer[0] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
+    frameBuffer[1] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
 
     VIDEO_Configure(rmode);
-    VIDEO_SetNextFramebuffer(xfb);
+    VIDEO_SetNextFramebuffer(frameBuffer[0]);
     VIDEO_SetBlack(FALSE);
     VIDEO_Flush();
     VIDEO_WaitVSync();
-    if (rmode->viTVMode & VI_NON_INTERLACE) VIDEO_WaitVSync();
 
-    resetGame();
-    int frameCounter = 0;
+    // Initialize GX Hardware
+    gp_fifo = memalign(32, FIFO_SIZE);
+    memset(gp_fifo, 0, FIFO_SIZE);
+    GX_Init(gp_fifo, FIFO_SIZE);
+
+    GXColor background = { 135, 206, 235, 255 }; // Sky Blue
+    GX_SetCopyClear(background, 0x00ffffff);
+
+    GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
+    GX_SetDispCopyYScale((f32)rmode->xfbHeight / (f32)rmode->efbHeight);
+    GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+    GX_SetDispCopyFromEFB(rmode->fbWidth, rmode->efbHeight);
+    GX_SetNumChans(1);
+    GX_SetNumTevStages(1);
+    GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+    GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+
+    // Vertex Format Configuration
+    GX_ClearVtxDesc();
+    GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
+    GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+    GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+    GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGB, GX_RGB8, 0);
+
+    // Setup 3D Projection Matrix
+    MtxP perspective;
+    f32 w = rmode->fbWidth;
+    f32 h = rmode->efbHeight;
+    guPerspective(perspective, 60.0f, (f32)w / (f32)h, 0.1f, 300.0f);
+    GX_LoadProjectionMtx(perspective, GX_PERSPECTIVE);
+
+    int fbIndex = 0;
+    resetCar();
 
     while (1) {
         WPAD_ScanPads();
-        PAD_ScanPads();
+        u32 pressed = WPAD_ButtonsDown(0);
+        u32 held = WPAD_ButtonsHeld(0);
 
-        u32 wiiDown = WPAD_ButtonsDown(0);
-        u32 gcDown = PAD_ButtonsDown(0);
-
-        if ((wiiDown & WPAD_BUTTON_HOME) || (gcDown & PAD_BUTTON_START)) {
-            break;
-        }
+        if (pressed & WPAD_BUTTON_HOME) break;
 
         // Toggle Pause Menu
-        if ((wiiDown & WPAD_BUTTON_PLUS)) {
+        if (pressed & WPAD_BUTTON_PLUS) {
             isPaused = !isPaused;
             pauseSelection = 0;
         }
 
         if (isPaused) {
-            // Menu Navigation
-            if ((wiiDown & WPAD_BUTTON_UP) || (wiiDown & WPAD_BUTTON_DOWN)) {
+            if (pressed & (WPAD_BUTTON_UP | WPAD_BUTTON_DOWN)) {
                 pauseSelection = !pauseSelection;
             }
-            if (wiiDown & WPAD_BUTTON_A) {
+            if (pressed & WPAD_BUTTON_A) {
                 if (pauseSelection == 0) {
-                    isPaused = false; // Resume
+                    isPaused = false;
                 } else {
-                    resetGame();      // Restart
+                    resetCar();
                 }
             }
-        } else if (gameOver) {
-            if ((wiiDown & WPAD_BUTTON_A) || (gcDown & PAD_BUTTON_A)) {
-                resetGame();
-            }
         } else {
-            // Game Direction Input
-            if (((wiiDown & WPAD_BUTTON_UP) || (gcDown & PAD_BUTTON_UP)) && dy != 1) {
-                dx = 0; dy = -1;
+            // Driving Controls
+            if (held & WPAD_BUTTON_2) { // Accelerate
+                carSpeed += 0.02f;
+                if (carSpeed > 1.2f) carSpeed = 1.2f;
+            } else if (held & WPAD_BUTTON_1) { // Reverse / Brake
+                carSpeed -= 0.015f;
+                if (carSpeed < -0.4f) carSpeed = -0.4f;
+            } else { // Friction
+                carSpeed *= 0.95f;
             }
-            if (((wiiDown & WPAD_BUTTON_DOWN) || (gcDown & PAD_BUTTON_DOWN)) && dy != -1) {
-                dx = 0; dy = 1;
+
+            if (held & WPAD_BUTTON_LEFT) {
+                carAngle += 2.5f;
             }
-            if (((wiiDown & WPAD_BUTTON_LEFT) || (gcDown & PAD_BUTTON_LEFT)) && dx != 1) {
-                dx = -1; dy = 0;
+            if (held & WPAD_BUTTON_RIGHT) {
+                carAngle -= 2.5f;
             }
-            if (((wiiDown & WPAD_BUTTON_RIGHT) || (gcDown & PAD_BUTTON_RIGHT)) && dx != -1) {
-                dx = 1; dy = 0;
-            }
+
+            // Update Position
+            float rad = carAngle * (M_PI / 180.0f);
+            carX += sinf(rad) * carSpeed;
+            carZ += cosf(rad) * carSpeed;
         }
 
-        frameCounter++;
-        if (frameCounter >= 8) {
-            updateSnake();
-            frameCounter = 0;
-        }
+        // Camera Configuration (Follows behind the car)
+        Mtx view;
+        guVector camPos = {
+            carX - sinf(carAngle * (M_PI / 180.0f)) * 12.0f,
+            5.0f,
+            carZ - cosf(carAngle * (M_PI / 180.0f)) * 12.0f
+        };
+        guVector camTarget = { carX, 1.0f, carZ };
+        guVector camUp = { 0.0f, 1.0f, 0.0f };
+        guLookAt(view, &camPos, &camUp, &camTarget);
+        GX_LoadPosMtxImm(view, GX_PNMTX0);
 
-        // Render Frame
-        clearScreen(COLOR_BLACK);
+        // Render 3D Scene
+        drawTrackPlane();
+        drawCube(carX, 1.0f, carZ, 1.2f, 0.6f, 2.0f, 220, 30, 30); // Red Car Body
 
-        drawRect(food.x * TILE_SIZE, food.y * TILE_SIZE, TILE_SIZE - 1, TILE_SIZE - 1, COLOR_RED);
+        // Swap Buffers and Display
+        GX_SetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
+        GX_ColorSpace(GX_RGB8_Z24);
+        GX_CopyDisp(frameBuffer[fbIndex], GX_TRUE);
+        GX_DrawDone();
 
-        for (int i = 0; i < snakeLength; i++) {
-            drawRect(snake[i].x * TILE_SIZE, snake[i].y * TILE_SIZE, TILE_SIZE - 1, TILE_SIZE - 1, COLOR_GREEN);
-        }
-
-        if (gameOver) {
-            drawRect(0, 0, rmode->fbWidth, 10, COLOR_RED);
-        } else if (isPaused) {
-            drawPauseMenu();
-        }
-
-        VIDEO_SetNextFramebuffer(xfb);
+        VIDEO_SetNextFramebuffer(frameBuffer[fbIndex]);
         VIDEO_Flush();
         VIDEO_WaitVSync();
+        fbIndex ^= 1;
     }
 
     return 0;
