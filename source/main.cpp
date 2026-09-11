@@ -12,7 +12,93 @@ static void *frameBuffer[2] = { NULL, NULL };
 static GXRModeObj *rmode = NULL;
 static void *gp_fifo = NULL;
 
-// ... [Keep your car variables and resetCar() function here] ...
+// Player Car Transform Data
+float carX = 0.0f;
+float carZ = 0.0f;
+float carAngle = 0.0f;
+float carSpeed = 0.0f;
+
+// Game State & Menu
+bool isPaused = false;
+int pauseSelection = 0; // 0 = Resume, 1 = Reset Position
+
+// Reset Car Position
+void resetCar() {
+    carX = 0.0f;
+    carZ = 0.0f;
+    carAngle = 0.0f;
+    carSpeed = 0.0f;
+    isPaused = false;
+    pauseSelection = 0;
+}
+
+// Draw a colored 3D Cube (used for the Car model)
+void drawCube(float x, float y, float z, float sx, float sy, float sz, u8 r, u8 g, u8 b) {
+    Mtx model, rot, trans;
+    guMtxIdentity(model);
+
+    guVector axis = { 0.0f, 1.0f, 0.0f };
+    guMtxRotAxisDeg(rot, &axis, carAngle);
+
+    guMtxTrans(trans, x, y, z);
+    guMtxConcat(trans, rot, model);
+
+    GX_LoadPosMtxImm(model, GX_PNMTX0);
+
+    GX_Begin(GX_QUADS, GX_VTXFMT0, 24);
+
+    // Front Face
+    GX_Position3f32(-sx, -sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx, -sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx,  sy,  sz); GX_Color3u8(r, g, b);
+
+    // Back Face
+    GX_Position3f32(-sx, -sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx,  sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx, -sy, -sz); GX_Color3u8(r, g, b);
+
+    // Top Face
+    GX_Position3f32(-sx,  sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx,  sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy, -sz); GX_Color3u8(r, g, b);
+
+    // Bottom Face
+    GX_Position3f32(-sx, -sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx, -sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx, -sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx, -sy,  sz); GX_Color3u8(r, g, b);
+
+    // Right Face
+    GX_Position3f32( sx, -sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx,  sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32( sx, -sy,  sz); GX_Color3u8(r, g, b);
+
+    // Left Face
+    GX_Position3f32(-sx, -sy, -sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx, -sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx,  sy,  sz); GX_Color3u8(r, g, b);
+    GX_Position3f32(-sx,  sy, -sz); GX_Color3u8(r, g, b);
+
+    GX_End();
+}
+
+// Draw 3D Ground Plane Grid
+void drawTrackPlane() {
+    Mtx model;
+    guMtxIdentity(model);
+    GX_LoadPosMtxImm(model, GX_PNMTX0);
+
+    GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
+        GX_Position3f32(-200.0f, -0.1f, -200.0f); GX_Color3u8(40, 140, 40);
+        GX_Position3f32( 200.0f, -0.1f, -200.0f); GX_Color3u8(40, 140, 40);
+        GX_Position3f32( 200.0f, -0.1f,  200.0f); GX_Color3u8(40, 140, 40);
+        GX_Position3f32(-200.0f, -0.1f,  200.0f); GX_Color3u8(40, 140, 40);
+    GX_End();
+}
 
 int main(int argc, char **argv) {
     VIDEO_Init();
@@ -20,7 +106,6 @@ int main(int argc, char **argv) {
 
     rmode = VIDEO_GetPreferredMode(NULL);
     
-    // Allocate framebuffers cleanly in cached/uncached memory
     frameBuffer[0] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
     frameBuffer[1] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
 
@@ -31,9 +116,8 @@ int main(int argc, char **argv) {
     VIDEO_WaitVSync();
     if (rmode->viTVMode & VI_NON_INTERLACE) VIDEO_WaitVSync();
 
-    // Allocate 32-byte aligned FIFO buffer for GX
     gp_fifo = memalign(32, FIFO_SIZE);
-    if (!gp_fifo) return 0; // Guard against failed allocation
+    if (!gp_fifo) return 0;
     memset(gp_fifo, 0, FIFO_SIZE);
 
     GX_Init(gp_fifo, FIFO_SIZE);
@@ -53,14 +137,12 @@ int main(int argc, char **argv) {
     GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
     GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
 
-    // Setup Vertex Format
     GX_ClearVtxDesc();
     GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
     GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
     GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
     GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGB, GX_RGB8, 0);
 
-    // Setup Perspective Matrix
     MtxP perspective;
     f32 w = rmode->fbWidth;
     f32 h = rmode->efbHeight;
@@ -77,7 +159,46 @@ int main(int argc, char **argv) {
 
         if (pressed & WPAD_BUTTON_HOME) break;
 
-        // ... [Drive logic] ...
+        // Toggle Pause Menu
+        if (pressed & WPAD_BUTTON_PLUS) {
+            isPaused = !isPaused;
+            pauseSelection = 0;
+        }
+
+        if (isPaused) {
+            if (pressed & (WPAD_BUTTON_UP | WPAD_BUTTON_DOWN)) {
+                pauseSelection = !pauseSelection;
+            }
+            if (pressed & WPAD_BUTTON_A) {
+                if (pauseSelection == 0) {
+                    isPaused = false;
+                } else {
+                    resetCar();
+                }
+            }
+        } else {
+            // Driving Controls
+            if (held & WPAD_BUTTON_2) { // Accelerate
+                carSpeed += 0.02f;
+                if (carSpeed > 1.2f) carSpeed = 1.2f;
+            } else if (held & WPAD_BUTTON_1) { // Reverse / Brake
+                carSpeed -= 0.015f;
+                if (carSpeed < -0.4f) carSpeed = -0.4f;
+            } else { // Friction
+                carSpeed *= 0.95f;
+            }
+
+            if (held & WPAD_BUTTON_LEFT) {
+                carAngle += 2.5f;
+            }
+            if (held & WPAD_BUTTON_RIGHT) {
+                carAngle -= 2.5f;
+            }
+
+            float rad = carAngle * (M_PI / 180.0f);
+            carX += sinf(rad) * carSpeed;
+            carZ += cosf(rad) * carSpeed;
+        }
 
         // Camera Setup
         Mtx view;
@@ -90,14 +211,12 @@ int main(int argc, char **argv) {
         guVector camUp = { 0.0f, 1.0f, 0.0f };
         guLookAt(view, &camPos, &camUp, &camTarget);
         
-        // Critical: Set view matrix before drawing primitives
         GX_LoadPosMtxImm(view, GX_PNMTX0);
 
         // Render Scene
         drawTrackPlane();
         drawCube(carX, 1.0f, carZ, 1.2f, 0.6f, 2.0f, 220, 30, 30);
 
-        // Copy EFB to XFB and swap
         GX_SetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
         GX_CopyDisp(frameBuffer[fbIndex], GX_TRUE);
         GX_DrawDone();
