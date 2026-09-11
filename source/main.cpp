@@ -20,9 +20,8 @@ float carSpeed = 0.0f;
 
 // Game State & Menu
 bool isPaused = false;
-int pauseSelection = 0; // 0 = Resume, 1 = Reset Position
+int pauseSelection = 0;
 
-// Reset Car Position
 void resetCar() {
     carX = 0.0f;
     carZ = 0.0f;
@@ -32,7 +31,7 @@ void resetCar() {
     pauseSelection = 0;
 }
 
-// Draw a colored 3D Cube (used for the Car model)
+// Draw a colored 3D Cube
 void drawCube(float x, float y, float z, float sx, float sy, float sz, u8 r, u8 g, u8 b) {
     Mtx model, rot, trans;
     guMtxIdentity(model);
@@ -86,7 +85,7 @@ void drawCube(float x, float y, float z, float sx, float sy, float sz, u8 r, u8 
     GX_End();
 }
 
-// Draw 3D Ground Plane Grid
+// Draw Ground Plane
 void drawTrackPlane() {
     Mtx model;
     guMtxIdentity(model);
@@ -105,7 +104,7 @@ int main(int argc, char **argv) {
     WPAD_Init();
 
     rmode = VIDEO_GetPreferredMode(NULL);
-    
+
     frameBuffer[0] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
     frameBuffer[1] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
 
@@ -116,6 +115,7 @@ int main(int argc, char **argv) {
     VIDEO_WaitVSync();
     if (rmode->viTVMode & VI_NON_INTERLACE) VIDEO_WaitVSync();
 
+    // Allocate 32-byte aligned FIFO buffer for GX GPU
     gp_fifo = memalign(32, FIFO_SIZE);
     if (!gp_fifo) return 0;
     memset(gp_fifo, 0, FIFO_SIZE);
@@ -159,7 +159,6 @@ int main(int argc, char **argv) {
 
         if (pressed & WPAD_BUTTON_HOME) break;
 
-        // Toggle Pause Menu
         if (pressed & WPAD_BUTTON_PLUS) {
             isPaused = !isPaused;
             pauseSelection = 0;
@@ -177,14 +176,13 @@ int main(int argc, char **argv) {
                 }
             }
         } else {
-            // Driving Controls
-            if (held & WPAD_BUTTON_2) { // Accelerate
+            if (held & WPAD_BUTTON_2) {
                 carSpeed += 0.02f;
                 if (carSpeed > 1.2f) carSpeed = 1.2f;
-            } else if (held & WPAD_BUTTON_1) { // Reverse / Brake
+            } else if (held & WPAD_BUTTON_1) {
                 carSpeed -= 0.015f;
                 if (carSpeed < -0.4f) carSpeed = -0.4f;
-            } else { // Friction
+            } else {
                 carSpeed *= 0.95f;
             }
 
@@ -200,7 +198,6 @@ int main(int argc, char **argv) {
             carZ += cosf(rad) * carSpeed;
         }
 
-        // Camera Setup
         Mtx view;
         guVector camPos = {
             carX - sinf(carAngle * (M_PI / 180.0f)) * 12.0f,
@@ -213,7 +210,7 @@ int main(int argc, char **argv) {
         
         GX_LoadPosMtxImm(view, GX_PNMTX0);
 
-        // Render Scene
+        // Draw 3D elements
         drawTrackPlane();
         drawCube(carX, 1.0f, carZ, 1.2f, 0.6f, 2.0f, 220, 30, 30);
 
