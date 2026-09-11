@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <malloc.h>
 #include <math.h>
 #include <gccore.h>
 #include <wiiuse/wpad.h>
@@ -35,12 +36,14 @@ void resetCar() {
 void drawCube(float x, float y, float z, float sx, float sy, float sz, u8 r, u8 g, u8 b) {
     Mtx model, rot, trans;
     guMtxIdentity(model);
-    guMtxRotAxisDeg(rot, &(guVector){0.0f, 1.0f, 0.0f}, carAngle);
+
+    // Fixed macro issue by passing an explicit axis vector variable
+    guVector axis = { 0.0f, 1.0f, 0.0f };
+    guMtxRotAxisDeg(rot, &axis, carAngle);
+
     guMtxTrans(trans, x, y, z);
     guMtxConcat(trans, rot, model);
 
-    Mtx modelView;
-    guMtxConcat(model, modelView, modelView); // Applied to current view matrix
     GX_LoadPosMtxImm(model, GX_PNMTX0);
 
     GX_Begin(GX_QUADS, GX_VTXFMT0, 24);
@@ -123,7 +126,11 @@ int main(int argc, char **argv) {
     GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
     GX_SetDispCopyYScale((f32)rmode->xfbHeight / (f32)rmode->efbHeight);
     GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
-    GX_SetDispCopyFromEFB(rmode->fbWidth, rmode->efbHeight);
+
+    // Updated libogc EFB display copy functions
+    GX_SetDispCopySrc(0, 0, rmode->fbWidth, rmode->efbHeight);
+    GX_SetDispCopyDst(rmode->fbWidth, rmode->xfbHeight);
+
     GX_SetNumChans(1);
     GX_SetNumTevStages(1);
     GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
@@ -213,7 +220,6 @@ int main(int argc, char **argv) {
 
         // Swap Buffers and Display
         GX_SetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
-        GX_ColorSpace(GX_RGB8_Z24);
         GX_CopyDisp(frameBuffer[fbIndex], GX_TRUE);
         GX_DrawDone();
 
